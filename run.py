@@ -22,10 +22,12 @@ class Hexagon():
         return (self.center[0] + self.radius * math.cos(angle_rad),
                 self.center[1] + self.radius * math.sin(angle_rad))
 
-    def draw(self, surface, color = None):
+    def draw(self, surface, color = None, line = None):
         """Draw a hexagon"""
         if not color:
             color = self.color
+        if not line:
+            line = self.line
         points = [self.hex_corner(x) for x in range(6)]
         pygame.draw.polygon(surface, color, points, self.line)
 
@@ -50,10 +52,10 @@ class Chip():
             pos = tuple(map(operator.add, self.hexagon.center, self.offset))
             surface.blit(self.image, pos)
 
-    def draw_outline(self, surface):
+    def draw_outline(self, surface, color = (200, 200, 0), line = 10):
         """Draw the outline of the chip if it's placed"""
         if hasattr(self, 'selection_hexagon') and self.selection_hexagon:
-            self.selection_hexagon.draw(surface, (200, 200, 0))
+            self.selection_hexagon.draw(surface, color, line)
 
     def is_mouse_on(self, mouse_pos):
         if hasattr(self, 'hexagon') and self.hexagon:
@@ -154,6 +156,15 @@ class GridDrawer():
             if chip.is_mouse_on(mouse_pos):
                 return chip
 
+    def chip_at_hexagon(self, pos):
+        hexagon = self.hexagons[pos]
+        if not hexagon:
+            return None
+        for chip in self.chips:
+            if chip.hexagon == hexagon:
+                return chip
+        return None
+
     @staticmethod
     def coords_in_surface((x, y), (width, height)):
         return x >= 0 and x <= width and y >= 0 and y <= height 
@@ -178,14 +189,25 @@ class GridDrawer():
         for chip_key in sorted(draw_chips.keys()):
             draw_chips[chip_key].draw(self.screen)
 
-    def draw_gui(self):
+    def draw_gui(self, mouse_hex):
+        # Draw the "Add Chip" Icon
         self.add_chip.draw(self.screen)
-        self.selected_chip.draw_outline(self.screen)
+
+        # Draw the selected chip, if one is selected
+        if self.selected_chip:
+            self.selected_chip.draw_outline(self.screen)
+
+        # Draw hexagon outlines for mouse overs
+        if self.hexagons.has_key(mouse_hex):
+            chip = self.chip_at_hexagon(mouse_hex)
+            if chip:
+                chip.draw_outline(self.screen, (255, 150, 150), 10)
+            else:
+                self.hexagons[mouse_hex].draw(self.screen, (255, 150, 150))
 
     def run(self):
         """Draw the screen with a hexagon grid"""
-        move = (0,0)
-
+        
         # Loop
         while not self.done:
             # Clear Events
@@ -208,7 +230,7 @@ class GridDrawer():
                     if not selected:
                         click = self.screen_to_axial(pos)
                 if event.type == pygame.MOUSEMOTION:
-                    move_a = self.screen_to_axial(pos)
+                    mouse_hex = self.screen_to_axial(pos)
 
             # Update
             if selected:
@@ -216,18 +238,15 @@ class GridDrawer():
                     self.create_chip()
                 else:
                     self.selected_chip = selected
-            if click and self.hexagons.has_key(click):
+            if self.selected_chip and click and self.hexagons.has_key(click):
                 self.selected_chip.set_grid_pos(self.hexagons[click])
+                self.selected_chip = None
 
             # Draw
             self.screen.fill((255,255,255))
             self.draw_hexagons()
             self.draw_chips()
-            self.draw_gui()
-
-            # Draw debug
-            if self.hexagons.has_key(move_a):
-                self.hexagons[move_a].draw(self.screen, (255, 150, 150))
+            self.draw_gui(mouse_hex)
 
             pygame.display.update()
 

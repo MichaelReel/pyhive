@@ -207,13 +207,14 @@ class GridDrawer():
 
     def run(self):
         """Draw the screen with a hexagon grid"""
-        
+        # Create a mouse over event
+        mouse_hex = None
+
         # Loop
         while not self.done:
             # Clear Events
             click = None
             selected = None
-            mouse_hex = None
 
             # Events
             for event in pygame.event.get():

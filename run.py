@@ -213,6 +213,7 @@ class GridDrawer():
             # Clear Events
             click = None
             selected = None
+            mouse_hex = None
 
             # Events
             for event in pygame.event.get():

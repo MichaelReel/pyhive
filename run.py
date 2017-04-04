@@ -6,14 +6,16 @@ import pygame
 import math
 import operator
 
-class Hexagon():
+class Hexagon(object):
     """Class for drawing a hollow hexagon"""
 
-    def __init__(self, position, radius, color, line = 2):
+    def __init__(self, position, radius, color, line = 2, col = None, row = None):
         self.center = position
         self.radius = radius
         self.color = color
         self.line = line
+        self.col = col
+        self.row = row
 
     def hex_corner(self, i):
         """Get corner"""
@@ -30,49 +32,92 @@ class Hexagon():
             line = self.line
         points = [self.hex_corner(x) for x in range(6)]
         pygame.draw.polygon(surface, color, points, self.line)
+        
+    def __str__(self):
+        return "Grid: ({col}, {row}), Pos: {pos}".format(col=self.col, row=self.row, pos=self.center)
 
-class Chip():
-    """Class for drawing a chip on the board"""
+class Chip(object):
+    """Base class for drawing a chip on the board"""
 
     def __init__(self):
-        icon = pygame.image.load("images/Bee.png").convert_alpha()
-        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
-        self.image.blit(icon, (0,0))
         self.offset = (-49, -55)
+        self.stacked_chip = None
+        self.covered_chip = None
+        self.hexagon = None
+        self.selection_hexagon = None
 
     def set_grid_pos(self, hexagon):
+        self.unstack_chip()
         self.hexagon = hexagon
-        if not hasattr(self, 'selection_hexagon'):
+        if not self.selection_hexagon:
             self.selection_hexagon = Hexagon(hexagon.center, hexagon.radius, hexagon.color)
         self.selection_hexagon.center = tuple(map(operator.add, self.hexagon.center, (0, -12)))
 
     def draw(self, surface):
         """Draw the chip on top of the hexagon"""
-        if hasattr(self, 'hexagon') and self.hexagon:
+        if self.hexagon:
             pos = tuple(map(operator.add, self.hexagon.center, self.offset))
             surface.blit(self.image, pos)
 
     def draw_outline(self, surface, color = (200, 200, 0), line = 10):
         """Draw the outline of the chip if it's placed"""
-        if hasattr(self, 'selection_hexagon') and self.selection_hexagon:
+        if self.selection_hexagon:
             self.selection_hexagon.draw(surface, color, line)
 
     def is_mouse_on(self, mouse_pos):
-        if hasattr(self, 'hexagon') and self.hexagon:
+        if self.hexagon:
             vector = tuple(map(operator.sub, self.hexagon.center, mouse_pos))
             magnatude = (vector[0] ** 2 + vector[1] ** 2) ** 0.5
             return magnatude < self.hexagon.radius
+
+    def stack_on_chip(self, other_chip):
+        if self != other_chip:
+            # Set the grid position of the chip being stacked
+            self.set_grid_pos(other_chip.selection_hexagon)
+            # Not trying to stack a chip on itself
+            other_chip.stacked_chip = self
+            self.covered_chip = other_chip
+
+    def unstack_chip(self):
+        # Don't unstack a chip with another on top
+        if self.stacked_chip:
+            raise ValueError("Can't unstack a covered chip")
+        if self.covered_chip:
+            # Disassociate chips
+            self.covered_chip.stacked_chip = None
+            self.covered_chip = None
+        self.stacked_chip = None
+        self.selection_hexagon = None
+
+    def top_of_stack(self):
+        if self.stacked_chip:
+            return self.stacked_chip.top_of_stack()
+        else:
+            return self
+
+    def __str__(self):
+        _type = type(self).__name__
+        return "{type} - {pos}, on: {on}".format(type=_type, pos=self.hexagon, on=self.covered_chip)
 
 class PlusChip(Chip):
     """Class for drawing a chip with a plus on it"""
 
     def __init__(self):
+        super(PlusChip, self).__init__()
         icon = pygame.image.load("images/Plus.png").convert_alpha()
         self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
         self.image.blit(icon, (0,0))
-        self.offset = (-49, -55)
 
-class GridDrawer():
+class BeeChip(Chip):
+    """Class for drawing a chip with a bee on it"""
+    
+    def __init__(self):
+        super(BeeChip, self).__init__()
+        icon = pygame.image.load("images/Bee.png").convert_alpha()
+        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
+        self.image.blit(icon, (0,0))
+
+class GridDrawer(object):
     """Class that draws a hexagon grid when run"""
 
     def __init__(self, screen_size, hex_size):
@@ -93,7 +138,7 @@ class GridDrawer():
         # Find all the "centers" that will fit on the screen
         centers = self.centers_visible(screen_size, radius)
         color = (200, 200, 200)
-        self.hexagons = {c: Hexagon(centers[c], radius, color) for c in centers.keys()}
+        self.hexagons = {c: Hexagon(centers[c], radius, color, line = 1, col = c[0], row = c[1]) for c in centers.keys()}
 
     def init_chips(self):
         self.chips = []
@@ -102,7 +147,7 @@ class GridDrawer():
         start_chip.set_grid_pos(self.hexagons[(0,0)])
 
     def create_chip(self):
-        new_chip = Chip()
+        new_chip = BeeChip()
         new_chip.set_grid_pos(self.add_chip.hexagon)
         self.chips.append(new_chip)
         self.selected_chip = new_chip
@@ -154,7 +199,7 @@ class GridDrawer():
     def clicked_chip(self, mouse_pos):
         for chip in self.chips:
             if chip.is_mouse_on(mouse_pos):
-                return chip
+                return chip.top_of_stack()
 
     def chip_at_hexagon(self, pos):
         hexagon = self.hexagons[pos]
@@ -182,12 +227,22 @@ class GridDrawer():
         # Sort chips from top of screen down before drawing
         draw_chips = {}
         for chip in self.chips:
-            if hasattr(chip, "hexagon"):
+            z_pos = 0
+            while chip and chip.hexagon:
                 # Sort by z, y then x
-                draw_chips["{},{},{}".format("0", chip.hexagon.center[1], chip.hexagon.center[0])] = chip 
+                draw_chips["{},{},{}".format(z_pos, chip.hexagon.center[1], chip.hexagon.center[0])] = chip
+                # Move up a layer
+                chip = chip.stacked_chip
+                z_pos += 1
+            
         # Draw chips in sorted order
         for chip_key in sorted(draw_chips.keys()):
             draw_chips[chip_key].draw(self.screen)
+
+    def print_chip_debug(self):
+        print "----------\nChip debug\n=========="
+        for chip in self.chips:
+            print str(chip)
 
     def draw_gui(self, mouse_hex):
         # Draw the "Add Chip" Icon
@@ -201,12 +256,16 @@ class GridDrawer():
         if self.hexagons.has_key(mouse_hex):
             chip = self.chip_at_hexagon(mouse_hex)
             if chip:
-                chip.draw_outline(self.screen, (255, 150, 150), 10)
+                chip.top_of_stack().draw_outline(self.screen, (255, 150, 150), 10)
             else:
                 self.hexagons[mouse_hex].draw(self.screen, (255, 150, 150))
 
     def run(self):
         """Draw the screen with a hexagon grid"""
+        # Constants
+        LEFT = 1
+        RIGHT = 3
+
         # Create a mouse over event
         mouse_hex = None
 
@@ -222,24 +281,38 @@ class GridDrawer():
                 if event.type == pygame.QUIT:
                     self.done = True
                 if event.type == pygame.MOUSEBUTTONUP:
-                    # Check if we're on the gui first
-                    if self.add_chip.is_mouse_on(pos):
-                        selected = self.add_chip
-                    # Then check if we're on an existing chip
-                    if not selected:
-                        selected = self.clicked_chip(pos)
-                    # Otherwise check the grid pos
-                    if not selected:
-                        click = self.screen_to_axial(pos)
+                    if event.button == LEFT:
+                        # Check if we're on the gui first
+                        if self.add_chip.is_mouse_on(pos):
+                            selected = self.add_chip
+                        # Then check if we're on an existing chip
+                        if not selected:
+                            selected = self.clicked_chip(pos)
+                        # Otherwise check the grid pos
+                        if not selected:
+                            click = self.screen_to_axial(pos)
+                    if event.button == RIGHT:
+                        if self.add_chip.is_mouse_on(pos):
+                            self.print_chip_debug()
                 if event.type == pygame.MOUSEMOTION:
                     mouse_hex = self.screen_to_axial(pos)
 
             # Update
             if selected:
+                # A chip has been click with the mouse
                 if selected == self.add_chip:
+                    # It was the "Add a chip" chip
                     self.create_chip()
                 else:
-                    self.selected_chip = selected
+                    # It was a game chip, check if we're selecting or moving
+                    if self.selected_chip:
+                        # Stack the selected chip onto this on
+                        self.selected_chip.stack_on_chip(selected)
+                        # Unselect the selected chip now
+                        self.selected_chip = None
+                    else:
+                        # Set the chip at the top of the selected stack to be the currently selected
+                        self.selected_chip = selected.top_of_stack()
             if self.selected_chip and click and self.hexagons.has_key(click):
                 self.selected_chip.set_grid_pos(self.hexagons[click])
                 self.selected_chip = None

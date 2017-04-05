@@ -9,6 +9,12 @@ import operator
 class Hexagon(object):
     """Class for drawing a hollow hexagon"""
 
+    # This is a list of keys marking coordinates of spaces in all directions
+    adjoin_directions = [(0,-1),(1,-1),(1,0),(0,1),(-1,1),(-1,0)]
+
+    # This is a list of keys marking relationships between the adjoining spaces 
+    adjoin_loop = [(1,0),(0,1),(-1,1),(-1,0),(0,-1),(1,-1)]
+
     def __init__(self, position, radius, color, line = 2, col = None, row = None):
         self.center = position
         self.radius = radius
@@ -16,6 +22,13 @@ class Hexagon(object):
         self.line = line
         self.col = col
         self.row = row
+        self.init_adjoins()
+
+    def init_adjoins(self):
+        """Setup a table of adjoining spaces"""
+        self.adjoins = {}
+        for key in Hexagon.adjoin_directions:
+            self.adjoins[key] = None
 
     def hex_corner(self, i):
         """Get corner"""
@@ -38,6 +51,7 @@ class Hexagon(object):
 
 class Chip(object):
     """Base class for drawing a chip on the board"""
+    id = 0
 
     def __init__(self):
         self.offset = (-49, -55)
@@ -45,13 +59,8 @@ class Chip(object):
         self.covered_chip = None
         self.hexagon = None
         self.selection_hexagon = None
-
-    def set_grid_pos(self, hexagon):
-        self.unstack_chip()
-        self.hexagon = hexagon
-        if not self.selection_hexagon:
-            self.selection_hexagon = Hexagon(hexagon.center, hexagon.radius, hexagon.color)
-        self.selection_hexagon.center = tuple(map(operator.add, self.hexagon.center, (0, -12)))
+        self.id = Chip.id
+        Chip.id += 1
 
     def draw(self, surface):
         """Draw the chip on top of the hexagon"""
@@ -69,14 +78,6 @@ class Chip(object):
             vector = tuple(map(operator.sub, self.hexagon.center, mouse_pos))
             magnatude = (vector[0] ** 2 + vector[1] ** 2) ** 0.5
             return magnatude < self.hexagon.radius
-
-    def stack_on_chip(self, other_chip):
-        if self != other_chip:
-            # Set the grid position of the chip being stacked
-            self.set_grid_pos(other_chip.selection_hexagon)
-            # Not trying to stack a chip on itself
-            other_chip.stacked_chip = self
-            self.covered_chip = other_chip
 
     def unstack_chip(self):
         # Don't unstack a chip with another on top
@@ -96,8 +97,8 @@ class Chip(object):
             return self
 
     def __str__(self):
-        _type = type(self).__name__
-        return "{type} - {pos}, on: {on}".format(type=_type, pos=self.hexagon, on=self.covered_chip)
+        on = "{type} {id}".format(type=type(self.covered_chip).__name__, id=self.covered_chip.id) if self.covered_chip else None
+        return "{type} {id} - {pos}, on: {on}".format(type=type(self).__name__, id = self.id, pos=self.hexagon, on=on)
 
 class PlusChip(Chip):
     """Class for drawing a chip with a plus on it"""
@@ -117,8 +118,8 @@ class BeeChip(Chip):
         self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
         self.image.blit(icon, (0,0))
 
-class GridDrawer(object):
-    """Class that draws a hexagon grid when run"""
+class PyHiveGame(object):
+    """Class that draws a hive game when run"""
 
     def __init__(self, screen_size, hex_size):
         # Bring up
@@ -133,29 +134,82 @@ class GridDrawer(object):
         # Create chips
         self.init_chips()
         self.cursor = None
+        # Find centers to initially be displayed
+        self.display_positions = self.centers_visible(screen_size, hex_size)
 
     def init_hexagons(self, screen_size, radius):
         # Find all the "centers" that will fit on the screen
-        centers = self.centers_visible(screen_size, radius)
+        # centers = self.centers_visible(screen_size, radius)
         color = (200, 200, 200)
-        self.hexagons = {c: Hexagon(centers[c], radius, color, line = 1, col = c[0], row = c[1]) for c in centers.keys()}
+        self.hexagons = {}
+        self.screen_center = tuple(map(operator.div, screen_size, (2,2)))
+        self.hexagons[(0,0)] = Hexagon(position = self.screen_center, radius = radius, color = color, line = 1, col = 0, row = 0)
+        # self.hexagons = {c: Hexagon(centers[c], radius, color, line = 1, col = c[0], row = c[1]) for c in centers.keys()}
 
     def init_chips(self):
         self.chips = []
-        # put chip at 0,0
+        # put chip in the players "hand"
         start_chip = self.create_chip()
-        start_chip.set_grid_pos(self.hexagons[(0,0)])
 
     def create_chip(self):
         new_chip = BeeChip()
-        new_chip.set_grid_pos(self.add_chip.hexagon)
+        self.set_grid_pos(new_chip, self.add_chip.hexagon)
         self.chips.append(new_chip)
         self.selected_chip = new_chip
         return new_chip
 
     def init_gui(self):
         self.add_chip = (PlusChip())
-        self.add_chip.set_grid_pos(Hexagon((50, 50), 50, (0,0,0)))
+        self.set_grid_pos(self.add_chip, Hexagon((50, 50), 50, (0,0,0)))
+
+    def set_grid_pos(self, chip, hexagon):
+        chip.unstack_chip()
+        chip.hexagon = hexagon
+        if not chip.selection_hexagon:
+            chip.selection_hexagon = Hexagon(hexagon.center, hexagon.radius, hexagon.color)
+        chip.selection_hexagon.center = tuple(map(operator.add, chip.hexagon.center, (0, -12)))
+        # For hexagons in the grid, make sure there is space to expand_grid
+        if hexagon.col != None and hexagon.row != None:
+            self.expand_grid(hexagon)
+
+    def expand_grid(self, hexagon):
+        """Expand the space, where appropriate, around the newly occupied hexagon"""
+        # Ensure adjoining space exist
+        for key_index in range(6):
+            key = Hexagon.adjoin_directions[key_index]
+            inverse_key = tuple(map(operator.mul, key, (-1,-1)))
+            if not hexagon.adjoins[key]:
+                # Get coords
+                axial_coords = tuple(map(operator.add, (hexagon.col, hexagon.row), key))
+                screen_coords = self.axial_to_screen(axial_coords)
+                # Create the new space in the draw table
+                new_hexagon = Hexagon(screen_coords, hexagon.radius, hexagon.color, col=axial_coords[0], row=axial_coords[1])
+                self.hexagons[axial_coords] = new_hexagon
+                # Create the linked space and link it back
+                hexagon.adjoins[key] = new_hexagon
+                new_hexagon.adjoins[inverse_key] = hexagon
+
+        # Ensure adjoining spaces are linked to each other as well
+        for key_index in range(6):
+            # Get 2 hexagons in sequence, circling the current hexagon
+            first_key = Hexagon.adjoin_directions[key_index]
+            second_key = Hexagon.adjoin_directions[(key_index + 1) % 6]
+            first = hexagon.adjoins[first_key]
+            second = hexagon.adjoins[second_key]
+            # Get key modifiers in both circular directions
+            cw_key = Hexagon.adjoin_loop[key_index]
+            acw_key = tuple(map(operator.mul, cw_key, (-1,-1)))
+            # Update the chips to link to each other
+            first.adjoins[cw_key] = second
+            second.adjoins[acw_key] = first
+
+    def stack_on_chip(self, stacked_chip, covered_chip):
+        if stacked_chip != covered_chip:
+            # Set the grid position of the chip being stacked
+            self.set_grid_pos(stacked_chip, covered_chip.selection_hexagon)
+            # Not trying to stack a chip on itself
+            covered_chip.stacked_chip = stacked_chip
+            stacked_chip.covered_chip = covered_chip
 
     def centers_visible(self, screen_size, radius):
         """Return a mapping of on screen cords from their axial coords to their surface coords"""
@@ -177,7 +231,7 @@ class GridDrawer(object):
             for row in range(-row_limit, row_limit + 1):
                 screen_coords = self.axial_to_screen((col, row))
                 # screen_coords = self.hex_to_pixel((col, row))
-                if GridDrawer.coords_in_surface(screen_coords, screen_size):
+                if PyHiveGame.coords_in_surface(screen_coords, screen_size):
                     coords[(col, row)] = (screen_coords)
 
         # print coords
@@ -239,6 +293,11 @@ class GridDrawer(object):
         for chip_key in sorted(draw_chips.keys()):
             draw_chips[chip_key].draw(self.screen)
 
+    def print_grid_debug(self):
+        print "----------\nGrid debug\n=========="
+        for hex in self.hexagons.keys():
+            print str(self.hexagons[hex])
+
     def print_chip_debug(self):
         print "----------\nChip debug\n=========="
         for chip in self.chips:
@@ -293,6 +352,7 @@ class GridDrawer(object):
                             click = self.screen_to_axial(pos)
                     if event.button == RIGHT:
                         if self.add_chip.is_mouse_on(pos):
+                            self.print_grid_debug()
                             self.print_chip_debug()
                 if event.type == pygame.MOUSEMOTION:
                     mouse_hex = self.screen_to_axial(pos)
@@ -307,14 +367,14 @@ class GridDrawer(object):
                     # It was a game chip, check if we're selecting or moving
                     if self.selected_chip:
                         # Stack the selected chip onto this on
-                        self.selected_chip.stack_on_chip(selected)
+                        self.stack_on_chip(self.selected_chip, selected)
                         # Unselect the selected chip now
                         self.selected_chip = None
                     else:
                         # Set the chip at the top of the selected stack to be the currently selected
                         self.selected_chip = selected.top_of_stack()
             if self.selected_chip and click and self.hexagons.has_key(click):
-                self.selected_chip.set_grid_pos(self.hexagons[click])
+                self.set_grid_pos(self.selected_chip, self.hexagons[click])
                 self.selected_chip = None
 
             # Draw
@@ -329,5 +389,5 @@ class GridDrawer(object):
         pygame.quit()
         sys.exit()
 
-drawer = GridDrawer((800, 600), 50)
+drawer = PyHiveGame((800, 600), 50)
 drawer.run()

@@ -6,6 +6,25 @@ import pygame
 import math
 import operator
 
+# Constants
+LEFT = 1
+RIGHT = 3
+
+WHITE = (255,255,255)
+LIGHT_GREY = (200, 200, 200)
+LIGHT_GREY_2 = (220, 220, 220)
+YELLOW = (200, 200, 0)
+PINK = (255, 150, 150)
+BLACK = (0, 0, 0)
+
+SCREEN_SIZE = (800, 600)
+ORIGIN = (0, 0)
+RADIUS = 50
+GUI_CHIP_POS = (50, 50)
+INVERSE_COORD = (-1, -1)
+CHIP_DRAW_OFFSET = (-49, -55)
+STACK_OFFSET = (0, -12)
+
 class Hexagon(object):
     """Class for drawing a hollow hexagon"""
 
@@ -54,7 +73,7 @@ class Chip(object):
     id = 0
 
     def __init__(self):
-        self.offset = (-49, -55)
+        self.offset = CHIP_DRAW_OFFSET
         self.stacked_chip = None
         self.covered_chip = None
         self.hexagon = None
@@ -68,7 +87,7 @@ class Chip(object):
             pos = tuple(map(operator.add, self.hexagon.center, self.offset))
             surface.blit(self.image, pos)
 
-    def draw_outline(self, surface, color = (200, 200, 0), line = 10):
+    def draw_outline(self, surface, color = YELLOW, line = 10):
         """Draw the outline of the chip if it's placed"""
         if self.selection_hexagon:
             self.selection_hexagon.draw(surface, color, line)
@@ -118,6 +137,80 @@ class BeeChip(Chip):
         self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
         self.image.blit(icon, (0,0))
 
+class AntChip(Chip):
+    """Class for drawing a chip with a ant on it"""
+    
+    def __init__(self):
+        super(AntChip, self).__init__()
+        icon = pygame.image.load("images/Ant.png").convert_alpha()
+        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
+        self.image.blit(icon, (0,0))
+
+class BeetleChip(Chip):
+    """Class for drawing a chip with a beetle on it"""
+    
+    def __init__(self):
+        super(BeetleChip, self).__init__()
+        icon = pygame.image.load("images/Beetle.png").convert_alpha()
+        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
+        self.image.blit(icon, (0,0))
+
+class GrasshopperChip(Chip):
+    """Class for drawing a chip with a grasshopper on it"""
+    
+    def __init__(self):
+        super(GrasshopperChip, self).__init__()
+        icon = pygame.image.load("images/Grasshopper.png").convert_alpha()
+        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
+        self.image.blit(icon, (0,0))
+
+class SpiderChip(Chip):
+    """Class for drawing a chip with a spider on it"""
+    
+    def __init__(self):
+        super(SpiderChip, self).__init__()
+        icon = pygame.image.load("images/Spider.png").convert_alpha()
+        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
+        self.image.blit(icon, (0,0))
+
+class ChipPool(object):
+    """
+    This class should act as a pool for a full set of basic chips
+    When a peice gets played it should be removed from the pool
+    and placed on the grid
+    """
+
+    def __init__(self):
+        self.chip_set = [
+            [BeeChip()],
+            [SpiderChip() for i in range(2)],
+            [BeetleChip() for i in range(2)],
+            [GrasshopperChip() for i in range(3)],
+            [AntChip() for i in range(3)]
+        ]
+        self._next = 0
+
+    def peek(self):
+        if not self.chip_set or not self.chip_set[self._next]:
+            return None
+        return self.chip_set[self._next][0]
+
+    def pop(self):
+        if not self.chip_set or not self.chip_set[self._next]:
+            return None
+        popped = self.chip_set[self._next][0]
+        self.chip_set[self._next].remove(popped)
+        # Remove list if it's now empty
+        if not self.chip_set[self._next]:
+            del self.chip_set[self._next]
+            self._next = self._next % len(self.chip_set) if self.chip_set else 0
+        return popped
+
+    def next(self):
+        self._next += 1
+        self._next %= len(self.chip_set) if self.chip_set else 1
+        return self.peek()
+
 class PyHiveGame(object):
     """Class that draws a hive game when run"""
 
@@ -131,43 +224,56 @@ class PyHiveGame(object):
         self.font = pygame.font.Font(None, 20)
         # setup draw_gui
         self.init_gui()
+        # Setup screen coords and draw values
+        self.spacing = (hex_size * 2 * 3 / 4, math.sqrt(3) / 2 * hex_size * 2)
+        self.orig = tuple(map(operator.div, screen_size, (2, 2)))
         # Create chips
         self.init_chips()
         self.cursor = None
-        # Find centers to initially be displayed
-        self.display_positions = self.centers_visible(screen_size, hex_size)
 
     def init_hexagons(self, screen_size, radius):
-        # Find all the "centers" that will fit on the screen
-        # centers = self.centers_visible(screen_size, radius)
-        color = (200, 200, 200)
+        color = LIGHT_GREY
         self.hexagons = {}
         self.screen_center = tuple(map(operator.div, screen_size, (2,2)))
-        self.hexagons[(0,0)] = Hexagon(position = self.screen_center, radius = radius, color = color, line = 1, col = 0, row = 0)
-        # self.hexagons = {c: Hexagon(centers[c], radius, color, line = 1, col = c[0], row = c[1]) for c in centers.keys()}
+        self.hexagons[ORIGIN] = Hexagon(position = self.screen_center, radius = radius, color = color, line = 1, col = 0, row = 0)
 
     def init_chips(self):
         self.chips = []
+        self.chip_pool = ChipPool()
+        self.selected_chip = None
         # put chip in the players "hand"
-        start_chip = self.create_chip()
+        start_chip = self.get_new_chip()
 
-    def create_chip(self):
-        new_chip = BeeChip()
+    def get_new_chip(self):
+        new_chip = None
+        if self.selected_chip == self.chip_pool.peek():
+            new_chip = self.chip_pool.next()
+        else:
+            new_chip = self.chip_pool.peek()
+        if not new_chip:
+            return None
         self.set_grid_pos(new_chip, self.add_chip.hexagon)
         self.chips.append(new_chip)
         self.selected_chip = new_chip
         return new_chip
 
+    def release_selected_chip(self):
+        if self.selected_chip == self.chip_pool.peek():
+            self.chip_pool.pop()
+        self.selected_chip = None
+
     def init_gui(self):
         self.add_chip = (PlusChip())
-        self.set_grid_pos(self.add_chip, Hexagon((50, 50), 50, (0,0,0)))
+        self.set_grid_pos(self.add_chip, Hexagon(GUI_CHIP_POS, RADIUS, BLACK))
 
     def set_grid_pos(self, chip, hexagon):
+        if not chip:
+            return
         chip.unstack_chip()
         chip.hexagon = hexagon
         if not chip.selection_hexagon:
             chip.selection_hexagon = Hexagon(hexagon.center, hexagon.radius, hexagon.color)
-        chip.selection_hexagon.center = tuple(map(operator.add, chip.hexagon.center, (0, -12)))
+        chip.selection_hexagon.center = tuple(map(operator.add, chip.hexagon.center, STACK_OFFSET))
         # For hexagons in the grid, make sure there is space to expand_grid
         if hexagon.col != None and hexagon.row != None:
             self.expand_grid(hexagon)
@@ -177,7 +283,7 @@ class PyHiveGame(object):
         # Ensure adjoining space exist
         for key_index in range(6):
             key = Hexagon.adjoin_directions[key_index]
-            inverse_key = tuple(map(operator.mul, key, (-1,-1)))
+            inverse_key = tuple(map(operator.mul, key, INVERSE_COORD))
             if not hexagon.adjoins[key]:
                 # Get coords
                 axial_coords = tuple(map(operator.add, (hexagon.col, hexagon.row), key))
@@ -198,7 +304,7 @@ class PyHiveGame(object):
             second = hexagon.adjoins[second_key]
             # Get key modifiers in both circular directions
             cw_key = Hexagon.adjoin_loop[key_index]
-            acw_key = tuple(map(operator.mul, cw_key, (-1,-1)))
+            acw_key = tuple(map(operator.mul, cw_key, INVERSE_COORD))
             # Update the chips to link to each other
             first.adjoins[cw_key] = second
             second.adjoins[acw_key] = first
@@ -211,42 +317,16 @@ class PyHiveGame(object):
             covered_chip.stacked_chip = stacked_chip
             stacked_chip.covered_chip = covered_chip
 
-    def centers_visible(self, screen_size, radius):
-        """Return a mapping of on screen cords from their axial coords to their surface coords"""
-        width = radius * 2
-        height = math.sqrt(3) / 2 * width
-
-        self.size = radius
-        self.spacing_x = width * 3 / 4
-        self.spacing_y = height
-        self.orig_x = screen_size[0] / 2
-        self.orig_y = screen_size[1] / 2
-
-        col_limit = self.orig_x / width + 1
-        row_limit = self.orig_y * 2 / int(height)
-
-        coords = {}
-
-        for col in range(-col_limit, col_limit + 1):
-            for row in range(-row_limit, row_limit + 1):
-                screen_coords = self.axial_to_screen((col, row))
-                # screen_coords = self.hex_to_pixel((col, row))
-                if PyHiveGame.coords_in_surface(screen_coords, screen_size):
-                    coords[(col, row)] = (screen_coords)
-
-        # print coords
-        return coords
-
     def axial_to_screen(self, (col, row)):
         """Return the center of the axial position as a screen position"""
-        x = col * self.spacing_x + self.orig_x
-        y = (row * self.spacing_y + self.orig_y) + (col * self.spacing_y / 2)
+        x = col * self.spacing[0] + self.orig[0]
+        y = (row * self.spacing[1] + self.orig[1]) + (col * self.spacing[1] / 2)
         return (x, y)
 
     def screen_to_axial(self, (x, y)):
-        """Find the nearest axial center for the given screen position""" 
-        col_f = (x - (self.orig_x - self.spacing_x / 2)) / self.spacing_x
-        row = round ( (y - (col_f * self.spacing_y / 2) - self.orig_y) / self.spacing_y )
+        """Find the nearest axial center (roughly) for the given screen position""" 
+        col_f = (x - (self.orig[0] - self.spacing[0] / 2)) / self.spacing[0]
+        row = round ( (y - (col_f * self.spacing[1] / 2) - self.orig[1]) / self.spacing[1] )
         col = round (col_f)
         return (int(col), int(row))
 
@@ -272,7 +352,7 @@ class PyHiveGame(object):
         for hex in self.hexagons.keys():
             self.hexagons[hex].draw(self.screen)
             coord_str = "{}".format(hex)
-            coord_text = self.font.render(coord_str, 0, (220, 220, 220))
+            coord_text = self.font.render(coord_str, 0, LIGHT_GREY_2)
             font_mid = map(operator.div, self.font.size(coord_str), (2, 2))
             text_pos = tuple(map(operator.sub, self.hexagons[hex].center, font_mid))
             self.screen.blit(coord_text, text_pos)
@@ -315,15 +395,12 @@ class PyHiveGame(object):
         if self.hexagons.has_key(mouse_hex):
             chip = self.chip_at_hexagon(mouse_hex)
             if chip:
-                chip.top_of_stack().draw_outline(self.screen, (255, 150, 150), 10)
+                chip.top_of_stack().draw_outline(self.screen, PINK, 10)
             else:
-                self.hexagons[mouse_hex].draw(self.screen, (255, 150, 150))
+                self.hexagons[mouse_hex].draw(self.screen, PINK)
 
     def run(self):
         """Draw the screen with a hexagon grid"""
-        # Constants
-        LEFT = 1
-        RIGHT = 3
 
         # Create a mouse over event
         mouse_hex = None
@@ -362,23 +439,23 @@ class PyHiveGame(object):
                 # A chip has been click with the mouse
                 if selected == self.add_chip:
                     # It was the "Add a chip" chip
-                    self.create_chip()
+                    self.get_new_chip()
                 else:
                     # It was a game chip, check if we're selecting or moving
                     if self.selected_chip:
                         # Stack the selected chip onto this on
                         self.stack_on_chip(self.selected_chip, selected)
                         # Unselect the selected chip now
-                        self.selected_chip = None
+                        self.release_selected_chip()
                     else:
                         # Set the chip at the top of the selected stack to be the currently selected
                         self.selected_chip = selected.top_of_stack()
             if self.selected_chip and click and self.hexagons.has_key(click):
                 self.set_grid_pos(self.selected_chip, self.hexagons[click])
-                self.selected_chip = None
+                self.release_selected_chip()
 
             # Draw
-            self.screen.fill((255,255,255))
+            self.screen.fill(WHITE)
             self.draw_hexagons()
             self.draw_chips()
             self.draw_gui(mouse_hex)
@@ -389,5 +466,5 @@ class PyHiveGame(object):
         pygame.quit()
         sys.exit()
 
-drawer = PyHiveGame((800, 600), 50)
+drawer = PyHiveGame(SCREEN_SIZE, RADIUS)
 drawer.run()

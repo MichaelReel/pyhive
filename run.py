@@ -72,7 +72,7 @@ class Chip(object):
     """Base class for drawing a chip on the board"""
     id = 0
 
-    def __init__(self):
+    def __init__(self, BaseChip = ""):
         self.offset = CHIP_DRAW_OFFSET
         self.stacked_chip = None
         self.covered_chip = None
@@ -80,6 +80,7 @@ class Chip(object):
         self.selection_hexagon = None
         self.id = Chip.id
         Chip.id += 1
+        self.image = pygame.image.load("images/BlankChip{}.png".format(BaseChip)).convert_alpha()
 
     def draw(self, surface):
         """Draw the chip on top of the hexagon"""
@@ -122,55 +123,49 @@ class Chip(object):
 class PlusChip(Chip):
     """Class for drawing a chip with a plus on it"""
 
-    def __init__(self):
-        super(PlusChip, self).__init__()
+    def __init__(self, BaseChip = ""):
+        super(PlusChip, self).__init__(BaseChip)
         icon = pygame.image.load("images/Plus.png").convert_alpha()
-        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
         self.image.blit(icon, (0,0))
 
 class BeeChip(Chip):
     """Class for drawing a chip with a bee on it"""
     
-    def __init__(self):
-        super(BeeChip, self).__init__()
+    def __init__(self, BaseChip = ""):
+        super(BeeChip, self).__init__(BaseChip)
         icon = pygame.image.load("images/Bee.png").convert_alpha()
-        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
         self.image.blit(icon, (0,0))
 
 class AntChip(Chip):
     """Class for drawing a chip with a ant on it"""
     
-    def __init__(self):
-        super(AntChip, self).__init__()
+    def __init__(self, BaseChip = ""):
+        super(AntChip, self).__init__(BaseChip)
         icon = pygame.image.load("images/Ant.png").convert_alpha()
-        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
         self.image.blit(icon, (0,0))
 
 class BeetleChip(Chip):
     """Class for drawing a chip with a beetle on it"""
     
-    def __init__(self):
-        super(BeetleChip, self).__init__()
+    def __init__(self, BaseChip = ""):
+        super(BeetleChip, self).__init__(BaseChip)
         icon = pygame.image.load("images/Beetle.png").convert_alpha()
-        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
         self.image.blit(icon, (0,0))
 
 class GrasshopperChip(Chip):
     """Class for drawing a chip with a grasshopper on it"""
     
-    def __init__(self):
-        super(GrasshopperChip, self).__init__()
+    def __init__(self, BaseChip = ""):
+        super(GrasshopperChip, self).__init__(BaseChip)
         icon = pygame.image.load("images/Grasshopper.png").convert_alpha()
-        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
         self.image.blit(icon, (0,0))
 
 class SpiderChip(Chip):
     """Class for drawing a chip with a spider on it"""
     
-    def __init__(self):
-        super(SpiderChip, self).__init__()
+    def __init__(self, BaseChip = ""):
+        super(SpiderChip, self).__init__(BaseChip)
         icon = pygame.image.load("images/Spider.png").convert_alpha()
-        self.image = pygame.image.load("images/BlankChip.png").convert_alpha()
         self.image.blit(icon, (0,0))
 
 class ChipPool(object):
@@ -180,13 +175,13 @@ class ChipPool(object):
     and placed on the grid
     """
 
-    def __init__(self):
+    def __init__(self, BaseChip = ""):
         self.chip_set = [
-            [BeeChip()],
-            [SpiderChip() for i in range(2)],
-            [BeetleChip() for i in range(2)],
-            [GrasshopperChip() for i in range(3)],
-            [AntChip() for i in range(3)]
+            [BeeChip(BaseChip)],
+            [SpiderChip(BaseChip) for i in range(2)],
+            [BeetleChip(BaseChip) for i in range(2)],
+            [GrasshopperChip(BaseChip) for i in range(3)],
+            [AntChip(BaseChip) for i in range(3)]
         ]
         self._next = 0
 
@@ -241,7 +236,8 @@ class PyHiveGame(object):
 
     def init_chips(self):
         self.chips = []
-        self.chip_pool = ChipPool()
+        # self.chip_pool = ChipPool("Cream")
+        self.chip_pool = ChipPool("Brown")
         self.selected_chip = None
         # put chip in the players "hand"
         start_chip = self.get_new_chip()

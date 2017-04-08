@@ -230,6 +230,8 @@ class PyHiveGame(object):
         # Create chips
         self.init_chips()
         self.cursor = None
+        # some debug
+        self.draw_debug_str = ""
 
     def init_hexagons(self, screen_size, radius):
         color = LIGHT_GREY
@@ -364,13 +366,16 @@ class PyHiveGame(object):
             z_pos = 0
             while chip and chip.hexagon:
                 # Sort by z, y then x
-                draw_chips["{},{},{}".format(z_pos, chip.hexagon.center[1], chip.hexagon.center[0])] = chip
+                index = "{:09.2f},{:09.2f},{:09.2f}".format(float(z_pos), float(chip.hexagon.center[1]), float(chip.hexagon.center[0]))
+                draw_chips[index] = chip
                 # Move up a layer
                 chip = chip.stacked_chip
                 z_pos += 1
             
         # Draw chips in sorted order
-        for chip_key in sorted(draw_chips.keys()):
+        sorted_keys = sorted(draw_chips.keys())
+        self.draw_debug_str = "\n".join(sorted_keys)
+        for chip_key in sorted_keys:
             draw_chips[chip_key].draw(self.screen)
 
     def print_grid_debug(self):
@@ -382,6 +387,8 @@ class PyHiveGame(object):
         print "----------\nChip debug\n=========="
         for chip in self.chips:
             print str(chip)
+        print "----------\nLast draw order\n=========="
+        print self.draw_debug_str
 
     def draw_gui(self, mouse_hex):
         # Draw the "Add Chip" Icon
